@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/sidebar"
 import { NotebookCard } from "@/components/notebook-card"
 import { ConfirmationModal } from "@/components/confirmation-modal"
 import { RenameModal } from "@/components/rename-modal"
+import { CreateItemModal } from "@/components/create-item-modal"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import Link from "next/link"
@@ -33,11 +34,16 @@ export default function BinderPage({ params }: { params: { id: string } }) {
   const [notebooks, setNotebooks] = useState<Notebook[]>(mockBinder.notebooks)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
+  const [createModal, setCreateModal] = useState(false)
 
   const handleCreateNotebook = () => {
+    setCreateModal(true)
+  }
+
+  const confirmCreateNotebook = (name: string) => {
     const newNotebook: Notebook = {
       id: `notebook-${Date.now()}`,
-      title: "New Notebook",
+      title: name,
       noteCount: 0,
     }
     setNotebooks([...notebooks, newNotebook])
@@ -153,6 +159,14 @@ export default function BinderPage({ params }: { params: { id: string } }) {
         onConfirm={confirmRename}
         currentName={renameModal.notebook?.title || ""}
         itemType="Notebook"
+      />
+
+      <CreateItemModal
+        isOpen={createModal}
+        onClose={() => setCreateModal(false)}
+        onConfirm={confirmCreateNotebook}
+        itemType="Notebook"
+        placeholder="My Study Notebook"
       />
     </div>
   )

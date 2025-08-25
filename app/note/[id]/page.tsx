@@ -7,10 +7,11 @@ import Link from "next/link"
 import type { NoteNode } from "@/lib/note-parser"
 
 // Mock data - in a real app, this would come from a database
-const mockNote = {
-  id: "note-1",
-  title: "Mitochondria - The Powerhouse",
-  content: `# [L1] The Mitochondria - Powerhouse of the Cell Mnemonic
+const mockNotes: Record<string, any> = {
+  "note-1": {
+    id: "note-1",
+    title: "Mitochondria - The Powerhouse",
+    content: `# [L1] The Mitochondria - Powerhouse of the Cell Mnemonic
 ## [L2] ATP Production
 ### [L3] Cellular respiration occurs here, converting glucose and oxygen into ATP.
 #### [L4] Example: Krebs Cycle and Electron Transport Chain.
@@ -20,19 +21,37 @@ const mockNote = {
 ## [L2] Matrix
 ### [L3] The innermost compartment containing enzymes for the citric acid cycle.
 #### [L4] Contains mitochondrial DNA and ribosomes.`,
+    notebookId: "notebook-1",
+    binderId: "sample-1",
+  },
 }
 
 export default function NotePage({ params }: { params: { id: string } }) {
-  const [note, setNote] = useState(mockNote)
+  const existingNote = mockNotes[params.id]
+  const [note, setNote] = useState(() => {
+    if (existingNote) {
+      return existingNote
+    }
+    // Return empty note for new notes
+    return {
+      id: params.id,
+      title: "New Note",
+      content: "",
+      notebookId: "notebook-1", // This should come from the URL or context
+      binderId: "sample-1",
+    }
+  })
 
   const handleSave = (title: string, nodes: NoteNode[]) => {
     console.log("Saving note:", { title, nodes })
     setNote((prev) => ({ ...prev, title }))
+    // In a real app, this would save to the database
   }
 
   const handleDelete = () => {
     console.log("Deleting note:", note.id)
     // Navigate back to notebook view
+    window.history.back()
   }
 
   const handleCopy = () => {
@@ -53,11 +72,11 @@ export default function NotePage({ params }: { params: { id: string } }) {
               Dashboard
             </Link>
             <span>/</span>
-            <Link href="/binder/sample-1" className="hover:text-foreground">
+            <Link href={`/binder/${note.binderId}`} className="hover:text-foreground">
               Sample Binder
             </Link>
             <span>/</span>
-            <Link href="/notebook/notebook-1" className="hover:text-foreground">
+            <Link href={`/notebook/${note.notebookId}`} className="hover:text-foreground">
               Sample Notebook
             </Link>
             <span>/</span>

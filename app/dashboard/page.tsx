@@ -1,44 +1,122 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Sidebar } from "@/components/sidebar"
 import { BinderCard } from "@/components/binder-card"
 import { ConfirmationModal } from "@/components/confirmation-modal"
 import { RenameModal } from "@/components/rename-modal"
+import { CreateItemModal } from "@/components/create-item-modal"
 import { Plus } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 interface Binder {
   id: string
   title: string
+  description?: string
+  color?: string
   notebookCount: number
   isSample?: boolean
+  created_at?: string
 }
 
 export default function DashboardPage() {
-  const [binders, setBinders] = useState<Binder[]>([
-    {
-      id: "sample-1",
-      title: "Sample Binder",
-      notebookCount: 1,
-      isSample: true,
-    },
-  ])
+  const [binders, setBinders] = useState<Binder[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [user, setUser] = useState<any>(null)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; binder?: Binder }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; binder?: Binder }>({ isOpen: false })
+  const [createModal, setCreateModal] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    const fetchUserAndBinders = async () => {
+      const supabase = createClient()
+
+      // Check if user is authenticated
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user) {
+        router.push("/login")
+        return
+      }
+
+      setUser(user)
+
+      // Fetch binders with notebook counts
+      const { data: bindersData, error: bindersError } = await supabase
+        .from("binders")
+        .select(`
+          id,
+          title,
+          description,
+          color,
+          created_at,
+          notebooks(count)
+        `)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+
+      if (bindersError) {
+        console.error("Error fetching binders:", bindersError)
+      } else {
+        const formattedBinders = bindersData.map((binder) => ({
+          id: binder.id,
+          title: binder.title,
+          description: binder.description,
+          color: binder.color,
+          notebookCount: binder.notebooks?.[0]?.count || 0,
+          isSample: binder.title === "Getting Started with Tome",
+          created_at: binder.created_at,
+        }))
+        setBinders(formattedBinders)
+      }
+
+      setIsLoading(false)
+    }
+
+    fetchUserAndBinders()
+  }, [router])
 
   const handleCreateBinder = () => {
-    const newBinder: Binder = {
-      id: `binder-${Date.now()}`,
-      title: "New Binder",
-      notebookCount: 0,
+    setCreateModal(true)
+  }
+
+  const confirmCreateBinder = async (name: string) => {
+    if (!user) return
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from("binders")
+      .insert({
+        user_id: user.id,
+        title: name,
+        description: "",
+        color: "#3b82f6",
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error creating binder:", error)
+    } else {
+      const newBinder: Binder = {
+        id: data.id,
+        title: data.title,
+        description: data.description,
+        color: data.color,
+        notebookCount: 0,
+        created_at: data.created_at,
+      }
+      setBinders([newBinder, ...binders])
     }
-    setBinders([...binders, newBinder])
   }
 
   const handleBinderClick = (id: string) => {
-    console.log("Opening binder:", id)
-    window.location.href = `/binder/${id}`
+    router.push(`/binder/${id}`)
   }
 
   const handleRenameBinder = (id: string) => {
@@ -55,18 +133,50 @@ export default function DashboardPage() {
     }
   }
 
-  const confirmRename = (newName: string) => {
-    if (renameModal.binder) {
+  const confirmRename = async (newName: string) => {
+    if (!renameModal.binder || !user) return
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("binders")
+      .update({ title: newName })
+      .eq("id", renameModal.binder.id)
+      .eq("user_id", user.id)
+
+    if (error) {
+      console.error("Error renaming binder:", error)
+    } else {
       setBinders(
         binders.map((binder) => (binder.id === renameModal.binder?.id ? { ...binder, title: newName } : binder)),
       )
     }
   }
 
-  const confirmDelete = () => {
-    if (deleteModal.binder) {
+  const confirmDelete = async () => {
+    if (!deleteModal.binder || !user) return
+
+    const supabase = createClient()
+    const { error } = await supabase.from("binders").delete().eq("id", deleteModal.binder.id).eq("user_id", user.id)
+
+    if (error) {
+      console.error("Error deleting binder:", error)
+    } else {
       setBinders(binders.filter((binder) => binder.id !== deleteModal.binder?.id))
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-background">
+        <Sidebar currentPath="/dashboard" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading your binders...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -132,6 +242,14 @@ export default function DashboardPage() {
         onConfirm={confirmRename}
         currentName={renameModal.binder?.title || ""}
         itemType="Binder"
+      />
+
+      <CreateItemModal
+        isOpen={createModal}
+        onClose={() => setCreateModal(false)}
+        onConfirm={confirmCreateBinder}
+        itemType="Binder"
+        placeholder="My Study Binder"
       />
     </div>
   )

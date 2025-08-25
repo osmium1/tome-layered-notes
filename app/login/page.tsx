@@ -1,18 +1,21 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
+import { createClient } from "@/lib/supabase/client"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({})
+  const [isLoading, setIsLoading] = useState(false)
+  const router = useRouter()
 
   const validateForm = () => {
     const newErrors: { email?: string; password?: string } = {}
@@ -31,11 +34,32 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (validateForm()) {
-      // Handle login logic here
-      console.log("Login attempt:", { email, password })
+    if (!validateForm()) return
+
+    setIsLoading(true)
+    setErrors({})
+    const supabase = createClient()
+
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+        options: {
+          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
+        },
+      })
+
+      if (error) {
+        setErrors({ general: error.message })
+      } else {
+        router.push("/dashboard")
+      }
+    } catch (error) {
+      setErrors({ general: "An unexpected error occurred" })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -80,8 +104,10 @@ export default function LoginPage() {
                 {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
               </div>
 
-              <Button type="submit" className="w-full" disabled={!isFormValid}>
-                Login
+              {errors.general && <p className="text-sm text-destructive">{errors.general}</p>}
+
+              <Button type="submit" className="w-full" disabled={!isFormValid || isLoading}>
+                {isLoading ? "Signing In..." : "Login"}
               </Button>
 
               <div className="text-center">

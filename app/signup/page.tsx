@@ -1,13 +1,14 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import Link from "next/link"
+import { createClient } from "@/lib/supabase/client"
 
 export default function SignUpPage() {
   const [email, setEmail] = useState("")
@@ -17,7 +18,11 @@ export default function SignUpPage() {
     email?: string
     password?: string
     confirmPassword?: string
+    general?: string
   }>({})
+  const [isLoading, setIsLoading] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
+  const router = useRouter()
 
   const validateForm = () => {
     const newErrors: {
@@ -50,12 +55,65 @@ export default function SignUpPage() {
     return Object.keys(newErrors).length === 0
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (validateForm()) {
-      // Handle signup logic here
-      console.log("Signup attempt:", { email, password })
+    if (!validateForm()) return
+
+    setIsLoading(true)
+    setErrors({})
+    const supabase = createClient()
+
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
+        },
+      })
+
+      if (error) {
+        setErrors({ general: error.message })
+      } else {
+        setIsSuccess(true)
+      }
+    } catch (error) {
+      setErrors({ general: "An unexpected error occurred" })
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <h1 className="text-4xl font-bold text-foreground mb-2">Tome</h1>
+            <p className="text-muted-foreground">The Art of Layered Learning</p>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-2xl font-semibold">Check Your Email</CardTitle>
+              <CardDescription>
+                We've sent you a confirmation link at <strong>{email}</strong>
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Click the link in your email to confirm your account and start using Tome.
+                </p>
+                <Button onClick={() => router.push("/login")} className="w-full">
+                  Back to Login
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   const isFormValid =
@@ -113,8 +171,10 @@ export default function SignUpPage() {
                 {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
               </div>
 
-              <Button type="submit" className="w-full" disabled={!isFormValid}>
-                Sign Up
+              {errors.general && <p className="text-sm text-destructive">{errors.general}</p>}
+
+              <Button type="submit" className="w-full" disabled={!isFormValid || isLoading}>
+                {isLoading ? "Creating Account..." : "Sign Up"}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">
