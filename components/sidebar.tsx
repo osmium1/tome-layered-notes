@@ -5,19 +5,28 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Settings, Menu, X, LogOut, User } from "lucide-react"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { createClient } from "@/lib/supabase/client"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { useUser } from "@/contexts/user-context"
 
 interface SidebarProps {
-  userEmail?: string
   currentPath?: string
 }
 
-export function Sidebar({ userEmail = "user@example.com", currentPath = "/dashboard" }: SidebarProps) {
+export function Sidebar({ currentPath = "/dashboard" }: SidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const router = useRouter()
+  const { user } = useUser()
 
-  const handleLogout = () => {
-    // Handle logout logic here
-    console.log("Logging out...")
+  const handleLogout = async () => {
+    const supabase = createClient()
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error("Error logging out:", error)
+    } else {
+      router.push("/login")
+    }
   }
 
   return (
@@ -49,7 +58,9 @@ export function Sidebar({ userEmail = "user@example.com", currentPath = "/dashbo
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="h-auto p-0 justify-start text-left">
-                      <span className="text-sm font-medium text-sidebar-foreground truncate">{userEmail}</span>
+                      <span className="text-sm font-medium text-sidebar-foreground truncate">
+                        {user?.email || "Loading..."}
+                      </span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-56">

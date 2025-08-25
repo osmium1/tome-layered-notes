@@ -52,7 +52,7 @@ export function LayeredNode({ node, onToggleExpansion, onUpdateContent }: Layere
       case 1:
         return "text-xl font-semibold text-foreground mb-3"
       case 2:
-        return "inline-block bg-accent/10 text-accent px-3 py-1 rounded-full text-sm font-medium mb-2"
+        return "inline-block bg-primary/20 text-primary px-3 py-1 rounded-full text-sm font-medium mb-2 border border-primary/30"
       case 3:
         return "text-base text-foreground leading-relaxed"
       case 4:

@@ -1,14 +1,13 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LayeredNode } from "@/components/layered-node"
 import { PasteToCreateModal } from "@/components/paste-to-create-modal"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { MoreVertical, Copy, Trash2, Expand, ListCollapse as Collapse } from "lucide-react"
+import { MoreVertical, Copy, Trash2, Expand, ListCollapse as Collapse, Save, AlertCircle } from "lucide-react"
 import {
   parseNoteContent,
   expandAllNodes,
@@ -21,8 +20,8 @@ import {
 interface NoteEditorProps {
   noteId?: string
   initialTitle?: string
-  initialContent?: string
-  onSave?: (title: string, nodes: NoteNode[]) => void
+  initialContent?: string | NoteNode[]
+  onSave?: (title: string, nodes: NoteNode[]) => Promise<boolean> | boolean
   onDelete?: () => void
   onCopy?: () => void
 }
@@ -38,17 +37,37 @@ export function NoteEditor({
   const [title, setTitle] = useState(initialTitle)
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [nodes, setNodes] = useState<NoteNode[]>(() => {
-    if (initialContent) {
+    if (Array.isArray(initialContent)) {
+      return initialContent
+    }
+    if (typeof initialContent === "string" && initialContent) {
       return parseNoteContent(initialContent)
     }
     return []
   })
   const [showPasteModal, setShowPasteModal] = useState(nodes.length === 0)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  const handlePasteContent = (content: string) => {
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = "You have unsaved changes. Are you sure you want to leave?"
+        return e.returnValue
+      }
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload)
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload)
+  }, [hasUnsavedChanges])
+
+  const handlePasteContent = async (content: string) => {
     const parsedNodes = parseNoteContent(content)
     setNodes(parsedNodes)
-    onSave?.(title, parsedNodes)
+    setHasUnsavedChanges(true)
+    await handleSaveChanges(title, parsedNodes)
   }
 
   const handleToggleExpansion = (nodeId: string) => {
@@ -56,8 +75,11 @@ export function NoteEditor({
   }
 
   const handleUpdateContent = (nodeId: string, content: string) => {
-    setNodes((prevNodes) => updateNodeContent(prevNodes, nodeId, content))
-    onSave?.(title, nodes)
+    setNodes((prevNodes) => {
+      const updatedNodes = updateNodeContent(prevNodes, nodeId, content)
+      setHasUnsavedChanges(true)
+      return updatedNodes
+    })
   }
 
   const handleExpandAll = () => {
@@ -68,9 +90,36 @@ export function NoteEditor({
     setNodes((prevNodes) => collapseAllNodes(prevNodes))
   }
 
-  const handleTitleSave = () => {
+  const handleSaveChanges = async (titleToSave: string = title, nodesToSave: NoteNode[] = nodes) => {
+    if (!onSave) return
+
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      const success = await onSave(titleToSave, nodesToSave)
+      if (success !== false) {
+        setHasUnsavedChanges(false)
+        console.log("[v0] Changes saved successfully")
+      } else {
+        setSaveError("Failed to save changes")
+      }
+    } catch (error) {
+      console.error("[v0] Error saving changes:", error)
+      setSaveError("Failed to save changes")
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle)
+    setHasUnsavedChanges(true)
+  }
+
+  const handleTitleSave = async () => {
     setIsEditingTitle(false)
-    onSave?.(title, nodes)
+    await handleSaveChanges(title, nodes)
   }
 
   const handleTitleKeyDown = (e: React.KeyboardEvent) => {
@@ -79,6 +128,7 @@ export function NoteEditor({
     } else if (e.key === "Escape") {
       setTitle(initialTitle)
       setIsEditingTitle(false)
+      setHasUnsavedChanges(false)
     }
   }
 
@@ -108,7 +158,7 @@ export function NoteEditor({
             {isEditingTitle ? (
               <Input
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => handleTitleChange(e.target.value)}
                 onBlur={handleTitleSave}
                 onKeyDown={handleTitleKeyDown}
                 className="text-2xl font-bold bg-transparent border-none p-0 h-auto"
@@ -122,9 +172,27 @@ export function NoteEditor({
                 {title}
               </h1>
             )}
+
+            {hasUnsavedChanges && (
+              <div className="flex items-center text-sm text-muted-foreground">
+                <AlertCircle className="h-4 w-4 mr-1" />
+                Unsaved changes
+              </div>
+            )}
           </div>
 
           <div className="flex items-center space-x-2">
+            {hasUnsavedChanges && (
+              <Button
+                onClick={() => handleSaveChanges()}
+                disabled={isSaving}
+                className="bg-primary hover:bg-primary/90"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {isSaving ? "Saving..." : "Save"}
+              </Button>
+            )}
+
             <Button variant="outline" size="sm" onClick={handleExpandAll}>
               <Expand className="h-4 w-4 mr-2" />
               Expand All
@@ -153,6 +221,13 @@ export function NoteEditor({
             </DropdownMenu>
           </div>
         </div>
+
+        {saveError && (
+          <div className="mt-2 text-sm text-destructive flex items-center">
+            <AlertCircle className="h-4 w-4 mr-1" />
+            {saveError}
+          </div>
+        )}
       </header>
 
       {/* Editor Canvas */}

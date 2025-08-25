@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Sidebar } from "@/components/sidebar"
 import { NotebookCard } from "@/components/notebook-card"
 import { ConfirmationModal } from "@/components/confirmation-modal"
@@ -9,6 +10,7 @@ import { CreateItemModal } from "@/components/create-item-modal"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import Link from "next/link"
+import { createClient } from "@/lib/supabase/client"
 
 interface Notebook {
   id: string
@@ -16,43 +18,120 @@ interface Notebook {
   noteCount: number
 }
 
-// Mock data - in a real app, this would come from a database
-const mockBinder = {
-  id: "sample-1",
-  title: "Sample Binder",
-  notebooks: [
-    {
-      id: "notebook-1",
-      title: "Sample Notebook",
-      noteCount: 1,
-    },
-  ],
+interface Binder {
+  id: string
+  title: string
 }
 
 export default function BinderPage({ params }: { params: { id: string } }) {
-  const [binder, setBinder] = useState(mockBinder)
-  const [notebooks, setNotebooks] = useState<Notebook[]>(mockBinder.notebooks)
+  const [binder, setBinder] = useState<Binder | null>(null)
+  const [notebooks, setNotebooks] = useState<Notebook[]>([])
+  const [user, setUser] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
   const [createModal, setCreateModal] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    const fetchBinderAndNotebooks = async () => {
+      console.log("[v0] Binder page - received ID:", params.id)
+      console.log("[v0] Binder page - ID type:", typeof params.id)
+
+      const supabase = createClient()
+
+      // Check if user is authenticated
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+      if (userError || !user) {
+        router.push("/login")
+        return
+      }
+
+      setUser(user)
+
+      // Fetch binder details
+      const { data: binderData, error: binderError } = await supabase
+        .from("binders")
+        .select("id, title")
+        .eq("id", params.id)
+        .eq("user_id", user.id)
+        .single()
+
+      if (binderError || !binderData) {
+        console.error("[v0] Error fetching binder:", binderError)
+        console.error("[v0] Attempted to fetch binder with ID:", params.id)
+        console.error("[v0] User ID:", user.id)
+        router.push("/dashboard")
+        return
+      }
+
+      setBinder(binderData)
+
+      // Fetch notebooks with note counts
+      const { data: notebooksData, error: notebooksError } = await supabase
+        .from("notebooks")
+        .select(`
+          id,
+          title,
+          notes(count)
+        `)
+        .eq("binder_id", params.id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+
+      if (notebooksError) {
+        console.error("Error fetching notebooks:", notebooksError)
+      } else {
+        const formattedNotebooks = notebooksData.map((notebook) => ({
+          id: notebook.id,
+          title: notebook.title,
+          noteCount: notebook.notes?.[0]?.count || 0,
+        }))
+        setNotebooks(formattedNotebooks)
+      }
+
+      setIsLoading(false)
+    }
+
+    fetchBinderAndNotebooks()
+  }, [params.id, router])
 
   const handleCreateNotebook = () => {
     setCreateModal(true)
   }
 
-  const confirmCreateNotebook = (name: string) => {
-    const newNotebook: Notebook = {
-      id: `notebook-${Date.now()}`,
-      title: name,
-      noteCount: 0,
+  const confirmCreateNotebook = async (name: string) => {
+    if (!user || !binder) return
+
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from("notebooks")
+      .insert({
+        binder_id: binder.id,
+        user_id: user.id,
+        title: name,
+        description: "",
+      })
+      .select()
+      .single()
+
+    if (error) {
+      console.error("Error creating notebook:", error)
+    } else {
+      const newNotebook: Notebook = {
+        id: data.id,
+        title: data.title,
+        noteCount: 0,
+      }
+      setNotebooks([newNotebook, ...notebooks])
     }
-    setNotebooks([...notebooks, newNotebook])
   }
 
   const handleNotebookClick = (id: string) => {
-    console.log("Opening notebook:", id)
-    // Navigate to notebook view
-    window.location.href = `/notebook/${id}`
+    router.push(`/notebook/${id}`)
   }
 
   const handleRenameNotebook = (id: string) => {
@@ -69,8 +148,19 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const confirmRename = (newName: string) => {
-    if (renameModal.notebook) {
+  const confirmRename = async (newName: string) => {
+    if (!renameModal.notebook || !user) return
+
+    const supabase = createClient()
+    const { error } = await supabase
+      .from("notebooks")
+      .update({ title: newName })
+      .eq("id", renameModal.notebook.id)
+      .eq("user_id", user.id)
+
+    if (error) {
+      console.error("Error renaming notebook:", error)
+    } else {
       setNotebooks(
         notebooks.map((notebook) =>
           notebook.id === renameModal.notebook?.id ? { ...notebook, title: newName } : notebook,
@@ -79,15 +169,53 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     }
   }
 
-  const confirmDelete = () => {
-    if (deleteModal.notebook) {
+  const confirmDelete = async () => {
+    if (!deleteModal.notebook || !user) return
+
+    const supabase = createClient()
+    const { error } = await supabase.from("notebooks").delete().eq("id", deleteModal.notebook.id).eq("user_id", user.id)
+
+    if (error) {
+      console.error("Error deleting notebook:", error)
+    } else {
       setNotebooks(notebooks.filter((notebook) => notebook.id !== deleteModal.notebook?.id))
     }
   }
 
+  if (isLoading) {
+    return (
+      <div className="flex h-screen bg-background">
+        <Sidebar currentPath="/dashboard" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading notebooks...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (!binder) {
+    return (
+      <div className="flex h-screen bg-background">
+        <Sidebar currentPath="/dashboard" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-xl font-semibold text-foreground mb-2">Binder Not Found</h2>
+            <p className="text-muted-foreground mb-4">The binder you're looking for doesn't exist.</p>
+            <Link href="/dashboard">
+              <Button>Back to Dashboard</Button>
+            </Link>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar />
+      <Sidebar userEmail={user?.email} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:ml-0">

@@ -10,6 +10,7 @@ import { RenameModal } from "@/components/rename-modal"
 import { CreateItemModal } from "@/components/create-item-modal"
 import { Plus } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/contexts/user-context"
 
 interface Binder {
   id: string
@@ -24,29 +25,23 @@ interface Binder {
 export default function DashboardPage() {
   const [binders, setBinders] = useState<Binder[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [user, setUser] = useState<any>(null)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; binder?: Binder }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; binder?: Binder }>({ isOpen: false })
   const [createModal, setCreateModal] = useState(false)
   const router = useRouter()
+  const { user, loading: userLoading } = useUser()
 
   useEffect(() => {
-    const fetchUserAndBinders = async () => {
-      const supabase = createClient()
+    const fetchBinders = async () => {
+      if (userLoading) return
 
-      // Check if user is authenticated
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-      if (userError || !user) {
+      if (!user) {
         router.push("/login")
         return
       }
 
-      setUser(user)
+      const supabase = createClient()
 
-      // Fetch binders with notebook counts
       const { data: bindersData, error: bindersError } = await supabase
         .from("binders")
         .select(`
@@ -78,8 +73,8 @@ export default function DashboardPage() {
       setIsLoading(false)
     }
 
-    fetchUserAndBinders()
-  }, [router])
+    fetchBinders()
+  }, [user, userLoading, router])
 
   const handleCreateBinder = () => {
     setCreateModal(true)
@@ -116,6 +111,8 @@ export default function DashboardPage() {
   }
 
   const handleBinderClick = (id: string) => {
+    console.log("[v0] Dashboard - clicking binder with ID:", id)
+    console.log("[v0] Dashboard - ID type:", typeof id)
     router.push(`/binder/${id}`)
   }
 
@@ -165,7 +162,7 @@ export default function DashboardPage() {
     }
   }
 
-  if (isLoading) {
+  if (userLoading || isLoading) {
     return (
       <div className="flex h-screen bg-background">
         <Sidebar currentPath="/dashboard" />
@@ -183,9 +180,7 @@ export default function DashboardPage() {
     <div className="flex h-screen bg-background">
       <Sidebar currentPath="/dashboard" />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:ml-0">
-        {/* Header */}
         <header className="border-b border-border bg-background px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="ml-12 md:ml-0">
@@ -198,7 +193,6 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 p-6 overflow-auto">
           {binders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">

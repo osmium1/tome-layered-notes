@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import { DM_Sans } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
+import { UserProvider } from "@/contexts/user-context"
 import "./globals.css"
 
 const dmSans = DM_Sans({
@@ -33,7 +34,7 @@ html {
       </head>
       <body>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
-          {children}
+          <UserProvider>{children}</UserProvider>
         </ThemeProvider>
       </body>
     </html>
