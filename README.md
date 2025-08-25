@@ -80,7 +80,6 @@ Visit `http://localhost:3000` to see your application.
 4. **Click "Click to add content"** to open the paste-to-create modal
 5. **Paste structured content** using layer tags:
 
-\`\`\`
 [L1] Photosynthesis
 The process by which plants convert light energy into chemical energy.
 
@@ -92,7 +91,6 @@ chlorophyll, sunlight, carbon dioxide, water
 
 [L4] Example
 A leaf absorbing sunlight and producing glucose and oxygen.
-\`\`\`
 
 6. **Watch your content transform** into an interactive, layered note structure
 
