@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/contexts/user-context"
 
 interface Notebook {
   id: string
@@ -26,31 +27,23 @@ interface Binder {
 export default function BinderPage({ params }: { params: { id: string } }) {
   const [binder, setBinder] = useState<Binder | null>(null)
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
-  const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; notebook?: Notebook }>({ isOpen: false })
   const [createModal, setCreateModal] = useState(false)
   const router = useRouter()
+  const { user, loading: userLoading } = useUser()
 
   useEffect(() => {
     const fetchBinderAndNotebooks = async () => {
-      console.log("[v0] Binder page - received ID:", params.id)
-      console.log("[v0] Binder page - ID type:", typeof params.id)
+      if (userLoading) return
 
-      const supabase = createClient()
-
-      // Check if user is authenticated
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-      if (userError || !user) {
+      if (!user) {
         router.push("/login")
         return
       }
 
-      setUser(user)
+      const supabase = createClient()
 
       // Fetch binder details
       const { data: binderData, error: binderError } = await supabase
@@ -61,9 +54,6 @@ export default function BinderPage({ params }: { params: { id: string } }) {
         .single()
 
       if (binderError || !binderData) {
-        console.error("[v0] Error fetching binder:", binderError)
-        console.error("[v0] Attempted to fetch binder with ID:", params.id)
-        console.error("[v0] User ID:", user.id)
         router.push("/dashboard")
         return
       }
@@ -79,7 +69,6 @@ export default function BinderPage({ params }: { params: { id: string } }) {
           notes(count)
         `)
         .eq("binder_id", params.id)
-        .eq("user_id", user.id)
         .order("created_at", { ascending: false })
 
       if (notebooksError) {
@@ -97,7 +86,7 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     }
 
     fetchBinderAndNotebooks()
-  }, [params.id, router])
+  }, [params.id, router, user, userLoading])
 
   const handleCreateNotebook = () => {
     setCreateModal(true)
@@ -111,9 +100,7 @@ export default function BinderPage({ params }: { params: { id: string } }) {
       .from("notebooks")
       .insert({
         binder_id: binder.id,
-        user_id: user.id,
         title: name,
-        description: "",
       })
       .select()
       .single()
@@ -152,11 +139,7 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     if (!renameModal.notebook || !user) return
 
     const supabase = createClient()
-    const { error } = await supabase
-      .from("notebooks")
-      .update({ title: newName })
-      .eq("id", renameModal.notebook.id)
-      .eq("user_id", user.id)
+    const { error } = await supabase.from("notebooks").update({ title: newName }).eq("id", renameModal.notebook.id)
 
     if (error) {
       console.error("Error renaming notebook:", error)
@@ -173,7 +156,7 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     if (!deleteModal.notebook || !user) return
 
     const supabase = createClient()
-    const { error } = await supabase.from("notebooks").delete().eq("id", deleteModal.notebook.id).eq("user_id", user.id)
+    const { error } = await supabase.from("notebooks").delete().eq("id", deleteModal.notebook.id)
 
     if (error) {
       console.error("Error deleting notebook:", error)
@@ -182,7 +165,7 @@ export default function BinderPage({ params }: { params: { id: string } }) {
     }
   }
 
-  if (isLoading) {
+  if (userLoading || isLoading) {
     return (
       <div className="flex h-screen bg-background">
         <Sidebar currentPath="/dashboard" />
@@ -215,11 +198,9 @@ export default function BinderPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar userEmail={user?.email} />
+      <Sidebar currentPath="/dashboard" />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:ml-0">
-        {/* Breadcrumb */}
         <div className="border-b border-border bg-background px-6 py-2">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground ml-12 md:ml-0">
             <Link href="/dashboard" className="hover:text-foreground">
@@ -230,7 +211,6 @@ export default function BinderPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {/* Header */}
         <header className="border-b border-border bg-background px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="ml-12 md:ml-0">
@@ -243,7 +223,6 @@ export default function BinderPage({ params }: { params: { id: string } }) {
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 p-6 overflow-auto">
           {notebooks.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -272,7 +251,6 @@ export default function BinderPage({ params }: { params: { id: string } }) {
         </main>
       </div>
 
-      {/* Modals */}
       <ConfirmationModal
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false })}

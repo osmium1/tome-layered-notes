@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import { useUser } from "@/contexts/user-context"
 
 interface Note {
   id: string
@@ -28,28 +29,23 @@ interface Notebook {
 export default function NotebookPage({ params }: { params: { id: string } }) {
   const [notebook, setNotebook] = useState<Notebook | null>(null)
   const [notes, setNotes] = useState<Note[]>([])
-  const [user, setUser] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; note?: Note }>({ isOpen: false })
   const [renameModal, setRenameModal] = useState<{ isOpen: boolean; note?: Note }>({ isOpen: false })
   const [createModal, setCreateModal] = useState(false)
   const router = useRouter()
+  const { user, loading: userLoading } = useUser()
 
   useEffect(() => {
     const fetchNotebookAndNotes = async () => {
-      const supabase = createClient()
+      if (userLoading) return
 
-      // Check if user is authenticated
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-      if (userError || !user) {
+      if (!user) {
         router.push("/login")
         return
       }
 
-      setUser(user)
+      const supabase = createClient()
 
       // Fetch notebook details with binder info
       const { data: notebookData, error: notebookError } = await supabase
@@ -61,11 +57,9 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
           binders!inner(title)
         `)
         .eq("id", params.id)
-        .eq("user_id", user.id)
         .single()
 
       if (notebookError || !notebookData) {
-        console.error("Error fetching notebook:", notebookError)
         router.push("/dashboard")
         return
       }
@@ -82,7 +76,6 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
         .from("notes")
         .select("id, title, content")
         .eq("notebook_id", params.id)
-        .eq("user_id", user.id)
         .order("created_at", { ascending: false })
 
       if (notesError) {
@@ -91,7 +84,10 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
         const formattedNotes = notesData.map((note) => ({
           id: note.id,
           title: note.title,
-          snippet: note.content ? "Click to view content..." : "Click to add content...",
+          snippet:
+            note.content && Array.isArray(note.content) && note.content.length > 0
+              ? "Click to view content..."
+              : "Click to add content...",
         }))
         setNotes(formattedNotes)
       }
@@ -100,7 +96,7 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
     }
 
     fetchNotebookAndNotes()
-  }, [params.id, router])
+  }, [params.id, router, user, userLoading])
 
   const handleCreateNote = () => {
     setCreateModal(true)
@@ -114,9 +110,8 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
       .from("notes")
       .insert({
         notebook_id: notebook.id,
-        user_id: user.id,
         title: name,
-        content: [], // Use empty array instead of null to satisfy not-null constraint
+        content: [],
       })
       .select()
       .single()
@@ -149,12 +144,10 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
 
     const supabase = createClient()
 
-    // Get the original note
     const { data: originalNote, error: fetchError } = await supabase
       .from("notes")
       .select("title, content")
       .eq("id", id)
-      .eq("user_id", user.id)
       .single()
 
     if (fetchError || !originalNote) {
@@ -162,12 +155,10 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
       return
     }
 
-    // Create the copy
     const { data, error } = await supabase
       .from("notes")
       .insert({
         notebook_id: notebook.id,
-        user_id: user.id,
         title: `${originalNote.title} (Copy)`,
         content: originalNote.content,
       })
@@ -180,7 +171,10 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
       const copiedNote: Note = {
         id: data.id,
         title: data.title,
-        snippet: data.content ? "Click to view content..." : "Click to add content...",
+        snippet:
+          data.content && Array.isArray(data.content) && data.content.length > 0
+            ? "Click to view content..."
+            : "Click to add content...",
       }
       setNotes([copiedNote, ...notes])
     }
@@ -197,11 +191,7 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
     if (!renameModal.note || !user) return
 
     const supabase = createClient()
-    const { error } = await supabase
-      .from("notes")
-      .update({ title: newName })
-      .eq("id", renameModal.note.id)
-      .eq("user_id", user.id)
+    const { error } = await supabase.from("notes").update({ title: newName }).eq("id", renameModal.note.id)
 
     if (error) {
       console.error("Error renaming note:", error)
@@ -214,7 +204,7 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
     if (!deleteModal.note || !user) return
 
     const supabase = createClient()
-    const { error } = await supabase.from("notes").delete().eq("id", deleteModal.note.id).eq("user_id", user.id)
+    const { error } = await supabase.from("notes").delete().eq("id", deleteModal.note.id)
 
     if (error) {
       console.error("Error deleting note:", error)
@@ -223,7 +213,7 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
     }
   }
 
-  if (isLoading) {
+  if (userLoading || isLoading) {
     return (
       <div className="flex h-screen bg-background">
         <Sidebar currentPath="/dashboard" />
@@ -256,11 +246,9 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar userEmail={user?.email} />
+      <Sidebar currentPath="/dashboard" />
 
-      {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:ml-0">
-        {/* Breadcrumb */}
         <div className="border-b border-border bg-background px-6 py-2">
           <div className="flex items-center space-x-2 text-sm text-muted-foreground ml-12 md:ml-0">
             <Link href="/dashboard" className="hover:text-foreground">
@@ -275,7 +263,6 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
           </div>
         </div>
 
-        {/* Header */}
         <header className="border-b border-border bg-background px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="ml-12 md:ml-0">
@@ -288,7 +275,6 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
           </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 p-6 overflow-auto">
           {notes.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -318,7 +304,6 @@ export default function NotebookPage({ params }: { params: { id: string } }) {
         </main>
       </div>
 
-      {/* Modals */}
       <ConfirmationModal
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false })}

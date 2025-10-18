@@ -41,24 +41,13 @@ export default function LoginPage() {
     setIsLoading(true)
     setErrors({})
 
-    console.log("[v0] Supabase URL:", process.env.NEXT_PUBLIC_SUPABASE_URL)
-    console.log("[v0] Supabase Anon Key exists:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-    console.log("[v0] Creating Supabase client...")
-
     const supabase = createClient()
-    console.log("[v0] Supabase client created:", supabase)
 
     try {
-      console.log("[v0] Attempting sign in with email:", email)
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
-        },
       })
-
-      console.log("[v0] Sign in response - error:", error)
 
       if (error) {
         setErrors({ general: error.message })
@@ -66,7 +55,6 @@ export default function LoginPage() {
         router.push("/dashboard")
       }
     } catch (error) {
-      console.log("[v0] Caught error:", error)
       setErrors({ general: error instanceof Error ? error.message : "An error occurred. Please try again." })
     } finally {
       setIsLoading(false)
